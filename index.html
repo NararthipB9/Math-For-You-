@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Math For You</title>
+    <style>
+        body { font-family: 'Kanit', sans-serif; background-color: #1a1a2e; color: #ffffff; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .game-container { background-color: #16213e; padding: 2rem; border-radius: 20px; text-align: center; width: 90%; max-width: 450px; border: 2px solid #0f3460; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        h1 { color: #e94560; margin-bottom: 10px; }
+        .menu-section { display: flex; flex-direction: column; gap: 15px; }
+        input, select, button { padding: 12px; border-radius: 10px; border: none; font-size: 1rem; }
+        input[type="text"] { background-color: #1a1a2e; color: white; border: 1px solid #0f3460; }
+        button { background-color: #e94560; color: white; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        button:hover { background-color: #ff2e63; transform: translateY(-2px); }
+        .hidden { display: none; }
+        .label { text-align: left; font-size: 0.8rem; color: #8892b0; margin-bottom: -10px; }
+        table { width: 100%; margin-top: 15px; border-collapse: collapse; }
+        th { color: #e94560; border-bottom: 2px solid #0f3460; padding-bottom: 5px; }
+        td { padding: 10px 0; border-bottom: 1px solid #0f3460; font-size: 0.9rem; }
+        #problem-area img { width: 100%; max-width: 400px; height: auto; border-radius: 8px; margin: 10px 0; border: 2px solid #533483; }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;500&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <div class="game-container">
+        <div id="menu-screen">
+            <h1>MATH For You</h1>
+            <div class="menu-section">
+                <div class="label">ชื่อนักรบ:</div>
+                <input type="text" id="player-name" placeholder="ใส่ชื่อของคุณ...">
+                <div class="label">เลือกบทเรียน:</div>
+                <select id="chapter">
+                    <option value="analytic_geometry">เรขาคณิตวิเคราะห์</option>
+                    <option value="conic_sections">ภาคตัดกรวย</option>
+                    <option value="functions">ความสัมพันธ์และฟังก์ชัน</option>
+                </select>
+                <div class="label">ระดับความยาก:</div>
+                <select id="difficulty">
+                    <option value="easy">ง่าย</option>
+                    <option value="medium">กลาง</option>
+                    <option value="hard">ยาก</option>
+                </select>
+                <button onclick="startGame()">เริ่มเกม!</button>
+                <button onclick="showLeaderboard()" style="background-color: #533483;">🏆 ดูอันดับคะแนน</button>
+            </div>
+        </div>
+
+        <div id="play-screen" class="hidden">
+            <h3 id="display-name" style="color: #e94560; margin-top: 0;"></h3>
+            <div id="timer" style="font-weight: bold; color: #8892b0;">เวลา: 0 วินาที</div>
+            <div id="question-number" style="color: #e94560; font-size: 0.9rem; margin-bottom: 10px;">ข้อที่: 0/0</div>
+            <div id="problem-area" style="margin: 20px 0; min-height: 100px; background: #0f3460; border-radius: 10px; padding: 15px; display: flex; align-items: center; justify-content: center;">
+                </div>
+            <input type="text" id="answer-input" placeholder="คำตอบคือ..." style="width: 80%; text-align: center;">
+            <button onclick="submitAnswer()" style="margin-top: 15px; width: 85%;">ส่งคำตอบ</button>
+        </div>
+
+        <div id="leaderboard-screen" class="hidden">
+            <h2 style="color: #e94560;">Top 10 นักรบตัวเลข</h2>
+            <div id="leaderboard-content" style="max-height: 300px; overflow-y: auto;"></div>
+            <button onclick="location.reload()" style="margin-top: 15px; width: 100%;">กลับหน้าหลัก</button>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, getDocs, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCcrw9_arVl2ofR6QMhzy1MIcZRfQOX96Y",
+            authDomain: "mathgameforyou.firebaseapp.com",
+            projectId: "mathgameforyou",
+            storageBucket: "mathgameforyou.firebasestorage.app",
+            messagingSenderId: "38809159877",
+            appId: "1:38809159877:web:7c1fc9d54a1c5311f908ac"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        const questionBank = {
+            analytic_geometry: { 
+                easy: [
+                    { img: "images/geo_e1.png", ans: "5" },
+                    { img: "images/geo_e2.png", ans: "13" }
+                ], 
+                medium: [], 
+                hard: [] 
+            },
+            conic_sections: { easy: [{ img: "images/conic_e1.png", ans: "4" }], medium: [], hard: [] },
+            functions: { easy: [{ img: "images/func_e1.png", ans: "1" }], medium: [], hard: [] }
+        };
+
+        let player = "", score = 0, time = 0, currentQ = [], qIndex = 0, timer;
+
+        // 1. เริ่มเกม
+        window.startGame = () => {
+            const name = document.getElementById('player-name').value;
+            if(!name) return alert("ใส่ชื่อก่อนครับ!");
+            
+            const chap = document.getElementById('chapter').value;
+            const diff = document.getElementById('difficulty').value;
+            currentQ = questionBank[chap][diff];
+            
+            if(!currentQ || currentQ.length === 0) return alert("ขออภัย! ยังไม่มีโจทย์ในระดับนี้ครับ");
+            
+            player = name;
+            qIndex = 0; score = 0; time = 0;
+            
+            document.getElementById('menu-screen').classList.add('hidden');
+            document.getElementById('play-screen').classList.remove('hidden');
+            document.getElementById('display-name').innerText = "นักรบ: " + player;
+            
+            clearInterval(timer);
+            timer = setInterval(() => { 
+                time++; 
+                document.getElementById('timer').innerText = `เวลา: ${time} วินาที`; 
+            }, 1000);
+            
+            showQ();
+        };
+
+        // 2. แสดงโจทย์ (เรียกใช้ตาม qIndex)
+        window.showQ = function() {
+            const problemArea = document.getElementById('problem-area');
+            const answerInput = document.getElementById('answer-input');
+
+            // เพิ่มบรรทัดนี้เพื่อบอกสถานะข้อปัจจุบัน
+            document.getElementById('question-number').innerText = `ข้อที่: ${qIndex + 1} / ${currentQ.length}`;
+            
+            if (qIndex < currentQ.length) {
+                const q = currentQ[qIndex];
+                problemArea.innerHTML = `
+                    <img src="${q.img}" 
+                    onerror="this.parentElement.innerHTML='<p style=color:red>หาไฟล์ ${q.img} ไม่เจอครับ</p>'">
+                `;
+                answerInput.value = "";
+                answerInput.focus();
+            } else {
+                endGame();
+            }
+        };
+
+        // 3. ส่งคำตอบและเลื่อนข้อ
+        window.submitAnswer = () => {
+            const userAns = document.getElementById('answer-input').value.trim();
+            
+            // ตรวจคำตอบข้อปัจจุบัน
+            if(userAns === currentQ[qIndex].ans) {
+                score++;
+            }
+            
+            // เพิ่มลำดับข้อ
+            qIndex++; 
+            
+            // แสดงข้อถัดไป
+            showQ(); 
+        };
+
+        // 4. จบเกมและบันทึกคะแนน
+        async function endGame() {
+            clearInterval(timer);
+            alert(`จบเกม! คุณทำได้ ${score}/${currentQ.length} คะแนน`);
+            try {
+                await addDoc(collection(db, "leaderboard"), { 
+                    name: player, 
+                    score: score, 
+                    time: time, 
+                    date: new Date() 
+                });
+            } catch(e) { console.error("Error saving score:", e); }
+            location.reload();
+        }
+
+        // 5. แสดงอันดับ
+        window.showLeaderboard = async () => {
+            document.getElementById('menu-screen').classList.add('hidden');
+            document.getElementById('leaderboard-screen').classList.remove('hidden');
+            const box = document.getElementById('leaderboard-content');
+            box.innerHTML = "<p>กำลังโหลดอันดับนักรบ...</p>";
+
+            try {
+                const q = query(collection(db, "leaderboard"), orderBy("score", "desc"), orderBy("time", "asc"), limit(10));
+                const snap = await getDocs(q);
+                
+                if (snap.empty) {
+                    box.innerHTML = "<p>ยังไม่มีสถิติในขณะนี้</p>";
+                    return;
+                }
+
+                let table = "<table><thead><tr><th>อันดับ</th><th>ชื่อ</th><th>คะแนน</th><th>เวลา</th></tr></thead><tbody>";
+                let rank = 1;
+                snap.forEach(d => {
+                    const data = d.data();
+                    table += `<tr>
+                        <td>${rank++}</td>
+                        <td>${data.name || "ไม่ระบุชื่อ"}</td>
+                        <td>${data.score}</td>
+                        <td>${data.time}s</td>
+                    </tr>`;
+                });
+                box.innerHTML = table + "</tbody></table>";
+            } catch(e) {
+                box.innerHTML = "โหลดข้อมูลไม่สำเร็จ";
+            }
+        };
+    </script>
+</body>
+</html>
