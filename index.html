@@ -53,6 +53,7 @@
             <div id="question-number" style="color: #e94560; font-size: 0.9rem; margin-bottom: 10px;">ข้อที่: 0/0</div>
             <div id="problem-area" style="margin: 20px 0; min-height: 100px; background: #0f3460; border-radius: 10px; padding: 15px; display: flex; align-items: center; justify-content: center;">
                 </div>
+            <div id="problem-caption" style="color: #8892b0; font-size: 0.9rem; margin-bottom: 15px; font-style: italic;"></div>    
             <input type="text" id="answer-input" placeholder="คำตอบคือ..." style="width: 80%; text-align: center;">
             <button onclick="submitAnswer()" style="margin-top: 15px; width: 85%;">ส่งคำตอบ</button>
         </div>
@@ -62,11 +63,16 @@
             <div id="leaderboard-content" style="max-height: 300px; overflow-y: auto;"></div>
             <button onclick="location.reload()" style="margin-top: 15px; width: 100%;">กลับหน้าหลัก</button>
         </div>
-    </div>
+        <div id="result-screen" class="hidden">
+            <h2 style="color: #e94560;">สรุปผลการรบ</h2>
+            <div id="result-details" style="text-align: left; max-height: 400px; overflow-y: auto; background: #0f3460; padding: 15px; border-radius: 10px;">
+                </div>
+            <button onclick="location.reload()" style="margin-top: 15px; width: 100%;">กลับหน้าหลัก</button>    
+        </div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, getDocs, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, getDocs, query, orderBy, limit ,where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyCcrw9_arVl2ofR6QMhzy1MIcZRfQOX96Y",
@@ -83,17 +89,28 @@
         const questionBank = {
             analytic_geometry: { 
                 easy: [
-                    { img: "images/geo_e1.png", ans: "5" },
-                    { img: "images/geo_e2.png", ans: "13" }
+                    { img: "images/geo_e1.png", ans: "5" , caption:"จงหาระยะห่างระหว่างจุดสองจุด",solutionImg: "images/geo_e1sol.jpg" },
+                    { img: "images/geo_e2.png", ans: "13", caption:"จงหาระยะห่างระหว่างจุดสองจุด",solutionImg:"images/geo_e2sol.jpg" },
+                    { img: "images/geo_e3.png", ans: "", caption:"จงหาระยะห่างระหว่างจุดสองจุด",solutionImg: "images/geo_e3sol.jpg"  },
+                    { img: "images/geo_e4.png", ans: "", caption:"จงหาระยะห่างระหว่างจุดสองจุด",solutionImg: "images/geo_e4sol.jpg"  },
                 ], 
-                medium: [], 
-                hard: [] 
+                medium: [
+                    {img:"images/geo_m1.jpg", ans:"17",caption:"",solutionImg:"images/geo_m1sol.jpg"},
+                    {img:"images/geo_m2.jpg", ans:"14.5",caption:"ตอบในรูปทศนิยม(xx.x)",solutionImg:"images/geo_m2sol.jpg"},
+                    {img:"images/geo_m3.jpg", ans:"4",caption:"",solutionImg:"images/geo_m3sol.jpg"},                  
+                    
+                ], 
+                hard: [
+                    {img:"images/geo_h1.jpg",ans:"0",caption:"ไม่ใช่ทุกปลั๊กจะมีไฟ ไม่ใช่ทุกใจจะมีรัก",solutionImg:"images/Tonson2.jpg"},
+                    {img:"images/geo_h2.jpg",ans: "pizza",caption:"แคปชั่นไม่รู้แคปหมูแน่นอน",solutionImg:"images/Free1.jpg"}
+                ] 
             },
             conic_sections: { easy: [{ img: "images/conic_e1.png", ans: "4" }], medium: [], hard: [] },
             functions: { easy: [{ img: "images/func_e1.png", ans: "1" }], medium: [], hard: [] }
         };
 
         let player = "", score = 0, time = 0, currentQ = [], qIndex = 0, timer;
+        let playerAnswers = []; // เพิ่มตัวแปรเก็บคำตอบที่ผู้เล่นพิมพ์มา    
 
         // 1. เริ่มเกม
         window.startGame = () => {
@@ -108,6 +125,7 @@
             
             player = name;
             qIndex = 0; score = 0; time = 0;
+            playerAnswers = []; // *** เพิ่มบรรทัดนี้เพื่อล้างประวัติการตอบเก่าออก ***
             
             document.getElementById('menu-screen').classList.add('hidden');
             document.getElementById('play-screen').classList.remove('hidden');
@@ -125,6 +143,7 @@
         // 2. แสดงโจทย์ (เรียกใช้ตาม qIndex)
         window.showQ = function() {
             const problemArea = document.getElementById('problem-area');
+            const problemCaption = document.getElementById('problem-caption');
             const answerInput = document.getElementById('answer-input');
 
             // เพิ่มบรรทัดนี้เพื่อบอกสถานะข้อปัจจุบัน
@@ -136,6 +155,8 @@
                     <img src="${q.img}" 
                     onerror="this.parentElement.innerHTML='<p style=color:red>หาไฟล์ ${q.img} ไม่เจอครับ</p>'">
                 `;
+                problemCaption.innerText = q.caption || "";
+
                 answerInput.value = "";
                 answerInput.focus();
             } else {
@@ -146,6 +167,11 @@
         // 3. ส่งคำตอบและเลื่อนข้อ
         window.submitAnswer = () => {
             const userAns = document.getElementById('answer-input').value.trim();
+
+            playerAnswers.push({
+                ...currentQ[qIndex],
+                userAns: userAns
+            });
             
             // ตรวจคำตอบข้อปัจจุบัน
             if(userAns === currentQ[qIndex].ans) {
@@ -162,31 +188,82 @@
         // 4. จบเกมและบันทึกคะแนน
         async function endGame() {
             clearInterval(timer);
-            alert(`จบเกม! คุณทำได้ ${score}/${currentQ.length} คะแนน`);
-            try {
-                await addDoc(collection(db, "leaderboard"), { 
-                    name: player, 
-                    score: score, 
-                    time: time, 
-                    date: new Date() 
+
+            // ดึงค่าบทเรียนที่เลือกอยู่ขณะนั้น
+            const chapValue = document.getElementById('chapter').value;
+            const diffValue = document.getElementById('difficulty').value; // ดึงค่าความยาก
+            const chapName = document.getElementById('chapter').options[document.getElementById('chapter').selectedIndex].text;
+
+
+            //ซ่อนหน้าเล่นและแสดงหน้าผลสรุป
+            document.getElementById('menu-screen').classList.add('hidden');
+            document.getElementById('play-screen').classList.add('hidden');
+            document.getElementById('result-screen').classList.remove('hidden');
+
+            let resultHTML = `<h3>คะแนนของคุณ: ${score}/${currentQ.length}</h3><hr>`;
+            playerAnswers.forEach((item, index) => {    
+                const isCorrect = item.userAns === item.ans;
+                resultHTML += `
+                    <div style="margin-bottom: 20px; border-bottom: 1px solid #16213e; padding-bottom: 15px;">
+                        <p><b>ข้อที่ ${index + 1}:</b> ${isCorrect ? '✅ ถูกต้อง' : '❌ ผิด'}</p>
+                        <p>คำตอบของคุณ: <span style="color: ${isCorrect ? '#4ceb34' : '#e94560'}">${item.userAns || "(ไม่ได้ตอบ)"}</span></p>
+                        <p>คำตอบที่ถูก: <span style="color: #4ceb34">${item.ans}</span></p>
+
+
+                        <div style="font-size: 0.85rem; color: #8892b0; background: #1a1a2e; padding: 10px; border-radius: 5px; margin-top: 5px;">
+                            <b style="display: block; margin-bottom: 5px;">เฉลยละเอียด:</b>
+                            ${item.solutionImg ?
+                            `<img src="${item.solutionImg}" style="width: 100%; max-width: 350px; border-radius: 5px; border: 1px solid #533483;" onerror="this.outerHTML='<span style=color:red>หารูปเฉลยไม่เจอ</span>'">`
+                            : "<span>(ไม่มีภาพเฉลยสำหรับข้อนี้)</span>"
+                        }
+                        </div>
+                    </div>
+                `;
                 });
-            } catch(e) { console.error("Error saving score:", e); }
-            location.reload();
-        }
+                document.getElementById('result-details').innerHTML = resultHTML;
+
+                // บันทึกคะแนนลง Firebase ตามปกติ
+                try {
+                    await addDoc(collection(db, "leaderboard"), {
+                        name: player, score: score, time: time, date: new Date(), chapter: chapValue, chapterName: chapName, difficulty: document.getElementById('difficulty').value
+                    });
+                } catch(e) { console.error(e); }
+        }    
 
         // 5. แสดงอันดับ
         window.showLeaderboard = async () => {
+
+            const selectedChap = document.getElementById('chapter').value;
+            const selectedChapName = document.getElementById('chapter').options[document.getElementById('chapter').selectedIndex].text;
+            const selectedDiff = document.getElementById('difficulty').value;
+            const selectedDiffName = document.getElementById('difficulty').options[document.getElementById('difficulty').selectedIndex].text;
+
             document.getElementById('menu-screen').classList.add('hidden');
             document.getElementById('leaderboard-screen').classList.remove('hidden');
+
             const box = document.getElementById('leaderboard-content');
-            box.innerHTML = "<p>กำลังโหลดอันดับนักรบ...</p>";
+            box.innerHTML = `<p style="color: #8892b0;">กำลังดึงข้อมูลนักรบ...</p>`;
+
+            // สร้างส่วนหัวเพื่อบอกว่ากำลังดู อันดับของ บทไหน/ความยากไหน
+            const headerHTML = `
+                <div style="margin-bottom: 15px; border-bottom: 1px solid #e94560; padding-bottom: 10px;">
+                    <div style="color: #e94560; font-weight: bold; font-size: 1.1rem;">${selectedChapName}</div>
+                    <div style="color: #8892b0; font-size: 0.85rem;">ระดับ: ${selectedDiffName}</div>
+                </div>`;
 
             try {
-                const q = query(collection(db, "leaderboard"), orderBy("score", "desc"), orderBy("time", "asc"), limit(10));
+                const q = query(collection(db, "leaderboard"), 
+                          where("chapter", "==", selectedChap),
+                          where("difficulty", "==", selectedDiff),
+                          orderBy("score", "desc"), 
+                          orderBy("time", "asc"),
+                          limit(10)
+                );
+
                 const snap = await getDocs(q);
                 
                 if (snap.empty) {
-                    box.innerHTML = "<p>ยังไม่มีสถิติในขณะนี้</p>";
+                    box.innerHTML = headerHTML + "<p style='margin-top:20px; color:#8892b0;'>ยังไม่มีสถิติในกลุ่มนี้<br>มาร่วมเป็นคนแรกกันเถอะ!</p>";            
                     return;
                 }
 
@@ -196,13 +273,14 @@
                     const data = d.data();
                     table += `<tr>
                         <td>${rank++}</td>
-                        <td>${data.name || "ไม่ระบุชื่อ"}</td>
-                        <td>${data.score}</td>
+                        <td style="text-align:left; padding-left:10px;">${data.name || "ไม่ระบุชื่อ"}</td>
+                        <td style="color:#4ceb34; font-weight:bold;">${data.score}</td>
                         <td>${data.time}s</td>
                     </tr>`;
                 });
-                box.innerHTML = table + "</tbody></table>";
+                box.innerHTML = headerHTML + table + "</tbody></table>";
             } catch(e) {
+                console.error(e);
                 box.innerHTML = "โหลดข้อมูลไม่สำเร็จ";
             }
         };
